@@ -6,14 +6,9 @@ const axios = require('axios');
 const config = require('../config');
 const logger = require('../logger');
 const { generateResultsForTest, generateExternalReferenceId } = require('./resultGenerator');
+const { sign: signPayload } = require('../lib/webhookSignature');
 
 const FAILED_TEST_PROBABILITY = 0.05;
-
-function signPayload(body, secret) {
-  const hmac = crypto.createHmac('sha256', secret);
-  hmac.update(body);
-  return `sha256=${hmac.digest('hex')}`;
-}
 
 function buildResultsPayload(order, externalReferenceId) {
   const results = order.tests.map((test) => {

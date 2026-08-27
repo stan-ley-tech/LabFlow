@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const express = require('express');
 const { z } = require('zod');
 const laboratoriesRepository = require('../../domain/laboratories/repository');
@@ -8,6 +7,7 @@ const labResultsService = require('../../domain/labResults/service');
 const { withTransaction } = require('../../db/transaction');
 const asyncHandler = require('../middleware/asyncHandler');
 const { ValidationError, UnauthorizedError, NotFoundError } = require('../../lib/errors');
+const { verify: verifySignature } = require('../../lib/webhookSignature');
 const logger = require('../../logger');
 
 const router = express.Router();
@@ -38,17 +38,6 @@ const webhookPayloadSchema = z.object({
   results: z.array(resultItemSchema).min(1),
   generatedAt: z.string(),
 });
-
-function verifySignature(rawBody, header, secret) {
-  if (!header || !header.startsWith('sha256=')) return false;
-
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-  const expectedBuf = Buffer.from(expected, 'hex');
-  const providedBuf = Buffer.from(header.slice('sha256='.length), 'hex');
-
-  if (expectedBuf.length !== providedBuf.length) return false;
-  return crypto.timingSafeEqual(expectedBuf, providedBuf);
-}
 
 /**
  * Claims a webhook delivery for processing. The unique index on

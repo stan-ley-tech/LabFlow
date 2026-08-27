@@ -9,28 +9,9 @@ const amqp = require('../../internal/events/connection');
 const { startConsumer } = require('../../internal/events/consumerRunner');
 const { startOutboxRelay } = require('../../internal/events/outboxRelay');
 const createHealthRouter = require('../../internal/http/routes/health');
-
-const orderValidationWorker = require('../../internal/workers/orderValidationWorker');
-const specimenRequestWorker = require('../../internal/workers/specimenRequestWorker');
-const specimenDispatchWorker = require('../../internal/workers/specimenDispatchWorker');
-const labProcessingStartWorker = require('../../internal/workers/labProcessingStartWorker');
-const resultReceivedWorker = require('../../internal/workers/resultReceivedWorker');
-const resultNotifyValidatedWorker = require('../../internal/workers/resultNotifyValidatedWorker');
-const resultNotifyCriticalWorker = require('../../internal/workers/resultNotifyCriticalWorker');
-const failureRecoveryWorker = require('../../internal/workers/failureRecoveryWorker');
+const { CONSUMER_BINDINGS } = require('../../internal/workers');
 
 const WORKER_HEALTH_PORT = config.port + 1;
-
-const CONSUMER_BINDINGS = [
-  ['order-validation', orderValidationWorker.handleOrderCreated],
-  ['specimen-request', specimenRequestWorker.handleOrderValidated],
-  ['specimen-dispatch', specimenDispatchWorker.handleSpecimenCollected],
-  ['lab-processing-start', labProcessingStartWorker.handleSpecimenReceived],
-  ['result-received', resultReceivedWorker.handleResultCreated],
-  ['result-notify-validated', resultNotifyValidatedWorker.handleResultValidated],
-  ['result-notify-critical', resultNotifyCriticalWorker.handleResultCritical],
-  ['failure-recovery', failureRecoveryWorker.handleResultFailed],
-];
 
 async function main() {
   await amqp.getConnection();
