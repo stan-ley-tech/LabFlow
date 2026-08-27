@@ -23,6 +23,7 @@
     "test:unit": "jest tests/unit --runInBand",
     "test:integration": "jest tests/integration --runInBand",
     "test:api": "jest tests/api --runInBand",
+    "test:webhooks": "jest tests/webhooks --runInBand",
     "test:e2e": "jest tests/e2e --runInBand"
   },
   "dependencies": {
