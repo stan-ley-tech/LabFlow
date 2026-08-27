@@ -32,6 +32,16 @@ async function handleSpecimenCollected(data) {
     logger.warn({ labOrderId, specimenId }, 'order or specimen no longer exists, dropping event');
     return;
   }
+  if (specimen.status !== 'collected') {
+    // A redelivery of this event (e.g. the worker crashed after dispatching
+    // but before acking) would otherwise re-send the order to the
+    // laboratory and regress the specimen's status. Only act on it once.
+    logger.info(
+      { labOrderId, specimenId, status: specimen.status },
+      'specimen already dispatched, skipping duplicate delivery',
+    );
+    return;
+  }
   if (laboratories.length === 0) {
     throw new Error('no active laboratory is registered to receive orders');
   }
