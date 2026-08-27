@@ -5,6 +5,7 @@ const { z } = require('zod');
 const service = require('../../domain/labOrders/service');
 const specimenService = require('../../domain/specimens/service');
 const validate = require('../middleware/validate');
+const idempotency = require('../middleware/idempotency');
 const asyncHandler = require('../middleware/asyncHandler');
 const authenticate = require('../middleware/auth');
 const requireRole = require('../middleware/rbac');
@@ -47,6 +48,7 @@ router.post(
   '/',
   requireRole('admin', 'clinician'),
   validate(createOrderSchema),
+  idempotency,
   asyncHandler(async (req, res) => {
     const order = await service.createOrder(req.body, { type: 'user', id: req.user.id });
     res.status(201).json(order);
