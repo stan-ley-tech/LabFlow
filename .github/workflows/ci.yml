@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_ENV: test
+  PORT: 3000
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: labflow
+  POSTGRES_USER: labflow
+  POSTGRES_PASSWORD: labflow
+  RABBITMQ_HOST: localhost
+  RABBITMQ_PORT: 5672
+  RABBITMQ_USER: labflow
+  RABBITMQ_PASSWORD: labflow
+  REDIS_HOST: localhost
+  REDIS_PORT: 6379
+  JWT_SECRET: ci-test-secret
+  EXTERNAL_LAB_BASE_URL: http://localhost:4000
+  EXTERNAL_LAB_PORT: 4000
+  EXTERNAL_LAB_WEBHOOK_SECRET: ci-test-webhook-secret
+  LABFLOW_WEBHOOK_URL: http://localhost:3000/webhooks/laboratory/results
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: labflow
+          POSTGRES_USER: labflow
+          POSTGRES_PASSWORD: labflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U labflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        env:
+          RABBITMQ_DEFAULT_USER: labflow
+          RABBITMQ_DEFAULT_PASS: labflow
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run migrations
+        run: npm run migrate
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: API tests
+        run: npm run test:api
+
+      - name: Webhook tests
+        run: npm run test:webhooks
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API/worker/externallab image
+        run: docker build --target runtime -t labflow:ci .
