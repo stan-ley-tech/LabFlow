@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant MQ as Main queue
+    participant W as Consumer (worker)
+    participant RQ as Retry queue
+    participant DL as dead_letters (Postgres)
+    participant DLQ as DLQ
+
+    MQ->>W: deliver message (x-retry-count: 0)
+    W->>W: handler throws
+    W->>RQ: publish (x-retry-count: 1, expiration: ~1s)
+    W->>MQ: ack original
+
+    Note over RQ: message waits out its TTL
+    RQ-->>MQ: dead-letters back on original routing key
+
+    MQ->>W: redeliver (x-retry-count: 1)
+    W->>W: handler throws again
+    W->>RQ: publish (x-retry-count: 2, expiration: ~2s)
+    W->>MQ: ack
+
+    Note over RQ,MQ: repeats with exponential backoff<br/>(1s, 2s, 4s, 8s, ... capped at 60s)
+
+    MQ->>W: redeliver (x-retry-count: maxRetries)
+    W->>W: handler throws again — retries exhausted
+    W->>DL: INSERT (queue, routing key, payload, error)
+    W->>DLQ: publish final copy
+    W->>MQ: ack original
+
+    Note over DLQ: parked — nothing consumes automatically.<br/>Visible via the dead_letters table for manual triage.

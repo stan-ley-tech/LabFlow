@@ -1,0 +1,41 @@
+sequenceDiagram
+    participant C as Clinician
+    participant API as api
+    participant DB as PostgreSQL
+    participant W as worker
+    participant MQ as RabbitMQ
+    participant Lab as externallab
+
+    C->>API: POST /lab-orders
+    API->>DB: INSERT lab_order + items + outbox_events (one transaction)
+    API-->>C: 201 Created
+
+    W->>DB: poll outbox_events
+    W->>MQ: publish lab.order.created
+    MQ->>W: deliver lab.order.created
+    W->>DB: order.status = validated + outbox lab.order.validated
+    MQ->>W: deliver lab.order.validated
+    W->>DB: create specimen + outbox specimen.requested
+
+    C->>API: POST /lab-orders/:id/collect
+    API->>DB: specimen.status = collected + outbox specimen.collected
+    API-->>C: 200 OK
+
+    MQ->>W: deliver specimen.collected
+    W->>Lab: POST /external/orders (circuit breaker + retry)
+    Lab-->>W: 202 Accepted (ack)
+    W->>DB: specimen.status = received + outbox specimen.received
+    MQ->>W: deliver specimen.received
+    W->>DB: items.status = in_progress + outbox lab.test.started
+
+    Note over Lab: simulated turnaround delay
+    Lab->>API: POST /webhooks/laboratory/results (signed)
+    API->>DB: lab_results + result_values + outbox lab.result.created
+    API-->>Lab: 200 OK
+
+    C->>API: POST /lab-results/:id/validate
+    API->>DB: result.status = validated + outbox lab.result.validated [+ .critical]
+    API-->>C: 200 OK
+
+    MQ->>W: deliver lab.result.validated
+    W->>W: notify clinician (email, + SMS if critical)
