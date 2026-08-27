@@ -1,3 +1,9 @@
+# api/worker load .env for everything (JWT_SECRET, webhook secrets, tuning
+# knobs, ...) but the *_HOST/*_PORT for postgres/rabbitmq/redis are pinned
+# below to each service's fixed in-network port regardless of what's in
+# .env — that file's POSTGRES_PORT etc. are for reaching a container from
+# the host (e.g. `psql -p`), which can be remapped to dodge a local port
+# conflict, and must not leak into container-to-container connections.
 services:
   postgres:
     image: postgres:16-alpine
@@ -52,8 +58,11 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
       RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
       REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
       - "${PORT:-3000}:3000"
     depends_on:
@@ -73,8 +82,11 @@ services:
       - .env
     environment:
       POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
       RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
       REDIS_HOST: redis
+      REDIS_PORT: 6379
       EXTERNAL_LAB_BASE_URL: http://externallab:4000
     depends_on:
       postgres:
