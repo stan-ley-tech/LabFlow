@@ -85,7 +85,7 @@ async function upsertPatient() {
 async function seed() {
   const devPassword = 'DevPassword123!';
 
-  const adminId = await upsertUser({
+  await upsertUser({
     email: 'admin@labflow.local',
     password: devPassword,
     fullName: 'System Administrator',
