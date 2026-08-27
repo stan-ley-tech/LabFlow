@@ -8,6 +8,7 @@ const { withRetry } = require('../lib/retry');
 let connection = null;
 let connectingPromise = null;
 let reconnectTimer = null;
+let closing = false;
 const stateListeners = new Set();
 
 function notifyState(state) {
@@ -29,9 +30,14 @@ async function establishConnection() {
   });
 
   conn.on('close', () => {
-    logger.warn('rabbitmq connection closed, scheduling reconnect');
     connection = null;
     notifyState('disconnected');
+    // close() (an intentional shutdown) sets `closing` before tearing the
+    // connection down, specifically so this handler doesn't schedule a
+    // reconnect for a close *we* asked for — otherwise graceful shutdown
+    // would spawn a timer that outlives the process it's supposed to end.
+    if (closing) return;
+    logger.warn('rabbitmq connection closed, scheduling reconnect');
     scheduleReconnect();
   });
 
@@ -39,11 +45,12 @@ async function establishConnection() {
 }
 
 function scheduleReconnect() {
-  if (reconnectTimer) return;
+  if (reconnectTimer || closing) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     getConnection().catch((err) => logger.error({ err }, 'rabbitmq reconnect failed'));
   }, 2000);
+  reconnectTimer.unref();
 }
 
 /** Returns the shared amqp connection, connecting (or waiting for an in-flight connect) as needed. */
@@ -55,6 +62,7 @@ async function getConnection() {
     .then((conn) => {
       connection = conn;
       connectingPromise = null;
+      closing = false;
       notifyState('connected');
       return conn;
     })
@@ -76,6 +84,7 @@ function onStateChange(listener) {
 }
 
 async function close() {
+  closing = true;
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;

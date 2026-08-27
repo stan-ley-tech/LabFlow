@@ -121,4 +121,4 @@ async function startConsumer(name, handler, { prefetch = 10 } = {}) {
   return channel;
 }
 
-module.exports = { startConsumer, computeBackoffMs, getRetryCount };
+module.exports = { startConsumer, computeBackoffMs, getRetryCount, handleFailure, handleMessage };
