@@ -9,6 +9,7 @@ const auditLogs = require('../auditLogs/repository');
 const outbox = require('../../events/outbox');
 const { EVENTS } = require('../../events/topology');
 const { NotFoundError, ConflictError } = require('../../lib/errors');
+const { isUniqueViolation } = require('../../lib/pgErrors');
 
 function toPublic(result, values = []) {
   return {
@@ -34,44 +35,61 @@ function toPublic(result, values = []) {
   };
 }
 
-/** Called by the laboratory results webhook once a payload has been validated. */
+/**
+ * Called by the laboratory results webhook once a payload has been
+ * validated. lab_results has a unique constraint on lab_order_item_id, so a
+ * second call for the same item (a redelivered webhook that slipped past
+ * the delivery-level dedup in the webhook route, or any other retry) hits a
+ * unique violation instead of creating a duplicate result — we catch that
+ * specifically and return the existing result rather than erroring, so
+ * callers see this as idempotent regardless of which layer caught the dupe.
+ */
 async function createResult({ labOrderItemId, laboratoryId, values }) {
-  return withTransaction(async (client) => {
-    const query = client.query.bind(client);
+  try {
+    return await withTransaction(async (client) => {
+      const query = client.query.bind(client);
 
-    const item = await itemsRepository.findById(labOrderItemId, query);
-    if (!item) throw new NotFoundError(`lab order item ${labOrderItemId} not found`);
+      const item = await itemsRepository.findById(labOrderItemId, query);
+      if (!item) throw new NotFoundError(`lab order item ${labOrderItemId} not found`);
 
-    const isCritical = values.some((v) => v.isCritical);
+      const isCritical = values.some((v) => v.isCritical);
 
-    const result = await repository.create({ labOrderItemId, laboratoryId, isCritical }, query);
-    const storedValues = await valuesRepository.createMany(result.id, values, query);
+      const result = await repository.create({ labOrderItemId, laboratoryId, isCritical }, query);
+      const storedValues = await valuesRepository.createMany(result.id, values, query);
 
-    await query(
-      "UPDATE lab_orders SET status = 'results_received', updated_at = now() WHERE id = $1 AND status = 'in_progress'",
-      [item.lab_order_id],
-    );
+      await query(
+        "UPDATE lab_orders SET status = 'results_received', updated_at = now() WHERE id = $1 AND status = 'in_progress'",
+        [item.lab_order_id],
+      );
 
-    await outbox.enqueue(client, {
-      aggregateType: 'lab_result',
-      aggregateId: result.id,
-      eventType: EVENTS.RESULT_CREATED,
-      payload: { labResultId: result.id, labOrderItemId, laboratoryId, isCritical },
+      await outbox.enqueue(client, {
+        aggregateType: 'lab_result',
+        aggregateId: result.id,
+        eventType: EVENTS.RESULT_CREATED,
+        payload: { labResultId: result.id, labOrderItemId, laboratoryId, isCritical },
+      });
+
+      await auditLogs.record(
+        {
+          actorType: 'system',
+          action: 'lab_result.created',
+          entityType: 'lab_result',
+          entityId: result.id,
+          metadata: { labOrderItemId, isCritical },
+        },
+        query,
+      );
+
+      return toPublic(result, storedValues);
     });
-
-    await auditLogs.record(
-      {
-        actorType: 'system',
-        action: 'lab_result.created',
-        entityType: 'lab_result',
-        entityId: result.id,
-        metadata: { labOrderItemId, isCritical },
-      },
-      query,
-    );
-
-    return toPublic(result, storedValues);
-  });
+  } catch (err) {
+    if (isUniqueViolation(err, 'lab_results_order_item_unique')) {
+      const existing = await repository.findByOrderItemId(labOrderItemId);
+      const existingValues = await valuesRepository.listByResultId(existing.id);
+      return toPublic(existing, existingValues);
+    }
+    throw err;
+  }
 }
 
 async function validateResult(labResultId, { validatedByUserId }) {

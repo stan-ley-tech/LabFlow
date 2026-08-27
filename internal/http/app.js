@@ -17,6 +17,7 @@ const laboratoryRoutes = require('./routes/laboratories');
 const labOrderRoutes = require('./routes/labOrders');
 const specimenRoutes = require('./routes/specimens');
 const labResultRoutes = require('./routes/labResults');
+const webhookRoutes = require('./routes/webhooks');
 
 function createApp() {
   const app = express();
@@ -24,9 +25,15 @@ function createApp() {
   app.disable('x-powered-by');
   app.use(helmet());
   app.use(cors());
-  app.use(express.json({ limit: '1mb' }));
   app.use(correlationId);
   app.use(requestLogger);
+
+  // Mounted before the global JSON body parser: this route needs the raw
+  // request body (unparsed) to verify the HMAC signature, and reads its own
+  // body with express.raw() internally.
+  app.use('/webhooks', webhookRoutes);
+
+  app.use(express.json({ limit: '1mb' }));
 
   app.use('/', createHealthRouter({ checkRabbitmq: false }));
   app.use('/auth', authRoutes);

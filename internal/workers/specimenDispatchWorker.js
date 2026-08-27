@@ -42,6 +42,7 @@ async function handleSpecimenCollected(data) {
   const payload = {
     labOrderId: order.id,
     orderNumber: order.order_number,
+    laboratoryCode: laboratory.code,
     specimenBarcode: barcode || specimen.barcode,
     priority: order.priority,
     tests: tests.map((t) => ({ labOrderItemId: items.find((i) => i.lab_test_id === t.id).id, code: t.code, name: t.name })),
