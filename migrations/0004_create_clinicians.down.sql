@@ -1,0 +1,2 @@
+ALTER TABLE users DROP COLUMN IF EXISTS clinician_id;
+DROP TABLE IF EXISTS clinicians;
